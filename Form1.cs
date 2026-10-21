@@ -171,8 +171,18 @@ public partial class Form1 : Form
         _approxR2 = ssTot > 0 ? 1 - ssRes / ssTot : 0;
 
         lblApprox.Text =
-            $"Аппроксимация: T(n) ≈ {_approxC:G4} · ln(n), R² = {_approxR2:F4}.\r\n" +
+            $"Аппроксимация: T(n) ≈ {_approxC * 1000:G4} мкс · ln(n), R² = {_approxR2:F4}.\r\n" +
             "Число шагов рекурсии extgcd(a,b) ~ log(min(a,b)), поэтому время растёт логарифмически от n — сложность O(log n).";
+    }
+
+    // Компактная подпись большого n: 1 200 000 -> "1,2 млн".
+    private static string FormatN(double n)
+    {
+        if (n >= 1e12) return (n / 1e12).ToString("0.#", System.Globalization.CultureInfo.CurrentCulture) + " трлн";
+        if (n >= 1e9) return (n / 1e9).ToString("0.#", System.Globalization.CultureInfo.CurrentCulture) + " млрд";
+        if (n >= 1e6) return (n / 1e6).ToString("0.#", System.Globalization.CultureInfo.CurrentCulture) + " млн";
+        if (n >= 1e3) return (n / 1e3).ToString("0.#", System.Globalization.CultureInfo.CurrentCulture) + " тыс";
+        return n.ToString("0");
     }
 
     private void PanelChart_Paint(object? sender, PaintEventArgs e)
@@ -187,46 +197,55 @@ public partial class Form1 : Form
         int height = panelChart.Height - padding * 2;
         if (width <= 0 || height <= 0) return;
 
-        // По оси X откладываем ln(n) — n рос геометрически, в линейных
-        // координатах точки легли бы кучно у правого края.
+        // Внутри откладываем ln(n) — n рос геометрически и на обычной линейной
+        // шкале точки легли бы кучно у правого края. Но подписываем ось
+        // настоящими значениями n, а не ln(n), чтобы график был понятен
+        // без пересчёта в голове.
         double logMin = Math.Log(_points.Min(p => p.N));
         double logMax = Math.Log(_points.Max(p => p.N));
         double logSpan = Math.Max(1e-9, logMax - logMin);
 
-        double maxMs = _points.Max(p => p.Ms);
-        if (maxMs <= 0) maxMs = 1;
+        // Время показываем в микросекундах — на таких операциях миллисекунды
+        // дают кучу нулей после запятой и выглядят пугающе.
+        double maxUs = _points.Max(p => p.Ms) * 1000.0;
+        if (maxUs <= 0) maxUs = 1;
 
         using var axisPen = new Pen(Color.Black, 2);
         g.DrawLine(axisPen, padding, padding + height, padding + width, padding + height);
         g.DrawLine(axisPen, padding, padding, padding, padding + height);
 
-        using var smallFont = new Font("Arial", 7);
+        using var smallFont = new Font("Arial", 8);
         using var labelFont = new Font("Arial", 9, FontStyle.Bold);
 
-        g.DrawString("ln(n) — n рос геометрически от 10 до Макс. n", labelFont, Brushes.Black,
-            padding + width / 2 - 120, padding + height + 25);
+        g.DrawString("n (диапазон случайных a, b) — логарифмическая шкала", labelFont, Brushes.Black,
+            padding + width / 2 - 140, padding + height + 25);
 
         for (int i = 0; i <= 6; i++)
         {
             double logN = logMin + logSpan * i / 6;
+            double n = Math.Exp(logN);
             int x = padding + (int)(width * i / 6.0);
             g.DrawLine(Pens.LightGray, x, padding, x, padding + height);
-            g.DrawString(logN.ToString("F1"), smallFont, Brushes.Black, x - 10, padding + height + 3);
+            string text = FormatN(n);
+            var textSize = g.MeasureString(text, smallFont);
+            g.DrawString(text, smallFont, Brushes.Black, x - textSize.Width / 2, padding + height + 4);
         }
 
         for (int i = 0; i <= 5; i++)
         {
-            double val = maxMs * i / 5;
+            double val = maxUs * i / 5;
             int y = padding + height - (int)(height * i / 5.0);
             g.DrawLine(Pens.LightGray, padding, y, padding + width, y);
-            g.DrawString(val.ToString("G3"), smallFont, Brushes.Black, padding - 48, y - 6);
+            string text = val.ToString("0.#");
+            var textSize = g.MeasureString(text, smallFont);
+            g.DrawString(text, smallFont, Brushes.Black, padding - textSize.Width - 6, y - 7);
         }
 
         foreach (var (n, ms) in _points)
         {
             double logN = Math.Log(n);
             int x = padding + (int)((logN - logMin) * width / logSpan);
-            int y = padding + height - (int)(ms * height / maxMs);
+            int y = padding + height - (int)(ms * 1000.0 * height / maxUs);
             g.FillEllipse(Brushes.SteelBlue, x - 3, y - 3, 6, 6);
         }
 
@@ -239,15 +258,20 @@ public partial class Form1 : Form
             for (int i = 0; i <= 100; i++)
             {
                 double logN = logMin + logSpan * i / 100.0;
-                double ms = _approxC * logN;
+                double us = _approxC * logN * 1000.0;
                 int x = padding + (int)(width * i / 100.0);
-                int y = padding + height - (int)(ms * height / maxMs);
+                int y = padding + height - (int)(us * height / maxUs);
                 var pt = new PointF(x, y);
                 if (prev.HasValue) g.DrawLine(approxPen, prev.Value, pt);
                 prev = pt;
             }
         }
 
-        g.DrawString("Замер времени extgcd(a, b) от n (минимум из серий, с прогревом JIT)", labelFont, Brushes.Black, padding, 10);
+        using var titleFont = new Font("Arial", 10, FontStyle.Bold);
+        g.DrawString("Время вычисления коэффициентов Безу (мкс) от n", titleFont, Brushes.Black, padding, 6);
+
+        using var legendFont = new Font("Arial", 8);
+        g.DrawString("синие точки — замер, красная пунктирная линия — аппроксимация C·ln(n)",
+            legendFont, Brushes.DimGray, padding, 26);
     }
 }
