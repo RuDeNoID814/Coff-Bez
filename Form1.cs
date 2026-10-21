@@ -4,12 +4,13 @@ namespace BezoutCoefficients;
 
 public partial class Form1 : Form
 {
-    private readonly List<(long N, double T)> _points = new();
+    private readonly List<(long N, double Ms)> _points = new();
     private double _approxC;
     private double _approxR2;
 
     private const double MinMeasureMs = 2.0;
     private const int MaxRepeatsPerPoint = 200_000;
+    private const int WarmupCalls = 200;
 
     public Form1()
     {
@@ -35,37 +36,47 @@ public partial class Form1 : Form
         _points.Clear();
 
         long maxN = (long)numMaxN.Value;
-        long step = (long)numStep.Value;
-        int runs = (int)numRuns.Value;
+        int pointCount = (int)numStep.Value;
+        int series = (int)numRuns.Value;
 
-        var sizes = new List<long>();
-        for (long n = step; n <= maxN; n += step) sizes.Add(n);
-        if (sizes.Count == 0 || sizes[^1] != maxN) sizes.Add(maxN);
+        // Точки берём с геометрическим (а не линейным) шагом по n — иначе
+        // на диапазоне до long.MaxValue почти все линейные точки легли бы
+        // в самый конец шкалы, а log(n) как раз растёт медленно и ровно.
+        const long minN = 10;
+        var ns = BuildGeometricSizes(minN, maxN, pointCount);
 
         progressBar1.Minimum = 0;
-        progressBar1.Maximum = sizes.Count;
+        progressBar1.Maximum = ns.Count;
         progressBar1.Value = 0;
+
+        var prevPriority = Thread.CurrentThread.Priority;
 
         await Task.Run(() =>
         {
-            var rng = new Random();
-
-            foreach (var n in sizes)
+            // Меньше дёрганий планировщиком ОС во время замера.
+            Thread.CurrentThread.Priority = ThreadPriority.Highest;
+            try
             {
-                double total = 0;
-                for (int r = 0; r < runs; r++)
-                    total += MeasureOnce(n, rng);
-                double avg = total / runs;
+                var rng = new Random();
 
-                // _points меняем только на UI-потоке — иначе Paint-обработчик
-                // панели (тоже на UI-потоке) может итерироваться по списку
-                // в момент, когда фоновый поток в него пишет.
-                Invoke(() =>
+                foreach (var n in ns)
                 {
-                    _points.Add((n, avg));
-                    progressBar1.Value = Math.Min(progressBar1.Value + 1, progressBar1.Maximum);
-                    panelChart.Invalidate();
-                });
+                    double ms = MeasureBest(n, rng, series);
+
+                    // _points меняем только на UI-потоке — иначе Paint-обработчик
+                    // панели (тоже на UI-потоке) может итерироваться по списку
+                    // в момент, когда фоновый поток в него пишет.
+                    Invoke(() =>
+                    {
+                        _points.Add((n, ms));
+                        progressBar1.Value = Math.Min(progressBar1.Value + 1, progressBar1.Maximum);
+                        panelChart.Invalidate();
+                    });
+                }
+            }
+            finally
+            {
+                Thread.CurrentThread.Priority = prevPriority;
             }
         });
 
@@ -74,42 +85,89 @@ public partial class Form1 : Form
         panelChart.Invalidate();
     }
 
-    // Замер как в лабе 1: один вызов extgcd слишком быстрый для прямого
-    // измерения таймером, поэтому повторяем вызов, пока не наберётся
-    // хотя бы MinMeasureMs суммарного времени, и делим на число повторов.
-    private static double MeasureOnce(long maxVal, Random rng)
+    private static List<long> BuildGeometricSizes(long minN, long maxN, int count)
     {
-        var sw = Stopwatch.StartNew();
-        int reps = 0;
-        while (reps < MaxRepeatsPerPoint && sw.Elapsed.TotalMilliseconds < MinMeasureMs)
+        var result = new List<long>();
+        double logMin = Math.Log(minN);
+        double logMax = Math.Log(Math.Max(maxN, minN + 1));
+
+        for (int i = 0; i < count; i++)
         {
-            long a = (long)(rng.NextDouble() * maxVal) + 1;
-            long b = (long)(rng.NextDouble() * maxVal) + 1;
-            BezoutMath.ExtendedGcd(a, b);
-            reps++;
+            double t = count == 1 ? 1 : (double)i / (count - 1);
+            double logN = logMin + (logMax - logMin) * t;
+            long n = (long)Math.Round(Math.Exp(logN));
+            result.Add(Math.Max(minN, Math.Min(n, maxN)));
         }
-        sw.Stop();
-        return reps > 0 ? sw.Elapsed.TotalMilliseconds / reps : 0;
+
+        return result.Distinct().OrderBy(n => n).ToList();
     }
 
-    // Число шагов рекурсии extgcd ~ log(min(a,b)), поэтому аппроксимируем
-    // через T(n) ≈ C * ln(n), а не через линейную/квадратичную модель.
+    // Реальное время в мс, с тремя приёмами против шума:
+    // 1) прогрев JIT (первые вызовы в .NET компилируются на лету —
+    //    искусственно медленнее, их не считаем);
+    // 2) адаптивные повторы, пока не наберётся хотя бы MinMeasureMs —
+    //    один вызов extgcd слишком быстрый для прямого измерения;
+    // 3) из нескольких независимых серий берём МИНИМУМ, а не среднее —
+    //    системный шум (переключения потоков, фоновые процессы) время
+    //    только увеличивает, никогда не уменьшает, поэтому минимум
+    //    ближе к истинной скорости работы алгоритма.
+    private static double MeasureBest(long maxVal, Random rng, int series)
+    {
+        for (int w = 0; w < WarmupCalls; w++)
+        {
+            long a = RandomInRange(rng, maxVal);
+            long b = RandomInRange(rng, maxVal);
+            BezoutMath.ExtendedGcd(a, b);
+        }
+
+        double best = double.MaxValue;
+        for (int s = 0; s < series; s++)
+        {
+            var sw = Stopwatch.StartNew();
+            int reps = 0;
+            while (reps < MaxRepeatsPerPoint && sw.Elapsed.TotalMilliseconds < MinMeasureMs)
+            {
+                long a = RandomInRange(rng, maxVal);
+                long b = RandomInRange(rng, maxVal);
+                BezoutMath.ExtendedGcd(a, b);
+                reps++;
+            }
+            sw.Stop();
+
+            if (reps > 0)
+            {
+                double avg = sw.Elapsed.TotalMilliseconds / reps;
+                if (avg < best) best = avg;
+            }
+        }
+
+        return best == double.MaxValue ? 0 : best;
+    }
+
+    private static long RandomInRange(Random rng, long maxVal)
+    {
+        long val = (long)(rng.NextDouble() * maxVal) + 1;
+        return val < 1 ? 1 : val;
+    }
+
+    // Число шагов extgcd(a,b) ~ log(min(a,b)), поэтому аппроксимируем
+    // T(n) ≈ C * ln(n).
     private void ComputeApproximation()
     {
         if (_points.Count < 2) return;
 
         double sumXY = 0, sumX2 = 0;
-        foreach (var (n, t) in _points)
+        foreach (var (n, ms) in _points)
         {
             double x = Math.Log(n);
-            sumXY += x * t;
+            sumXY += x * ms;
             sumX2 += x * x;
         }
         _approxC = sumX2 > 0 ? sumXY / sumX2 : 0;
 
-        double meanT = _points.Average(p => p.T);
-        double ssTot = _points.Sum(p => Math.Pow(p.T - meanT, 2));
-        double ssRes = _points.Sum(p => Math.Pow(p.T - _approxC * Math.Log(p.N), 2));
+        double meanMs = _points.Average(p => p.Ms);
+        double ssTot = _points.Sum(p => Math.Pow(p.Ms - meanMs, 2));
+        double ssRes = _points.Sum(p => Math.Pow(p.Ms - _approxC * Math.Log(p.N), 2));
         _approxR2 = ssTot > 0 ? 1 - ssRes / ssTot : 0;
 
         lblApprox.Text =
@@ -124,16 +182,19 @@ public partial class Form1 : Form
         var g = e.Graphics;
         g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
-        int padding = 50;
+        int padding = 55;
         int width = panelChart.Width - padding * 2;
         int height = panelChart.Height - padding * 2;
         if (width <= 0 || height <= 0) return;
 
-        long maxN = _points.Max(p => p.N);
-        long minN = _points.Min(p => p.N);
-        double maxT = _points.Max(p => p.T);
-        if (maxT <= 0) maxT = 1;
-        double nSpan = Math.Max(1.0, maxN - minN);
+        // По оси X откладываем ln(n) — n рос геометрически, в линейных
+        // координатах точки легли бы кучно у правого края.
+        double logMin = Math.Log(_points.Min(p => p.N));
+        double logMax = Math.Log(_points.Max(p => p.N));
+        double logSpan = Math.Max(1e-9, logMax - logMin);
+
+        double maxMs = _points.Max(p => p.Ms);
+        if (maxMs <= 0) maxMs = 1;
 
         using var axisPen = new Pen(Color.Black, 2);
         g.DrawLine(axisPen, padding, padding + height, padding + width, padding + height);
@@ -142,29 +203,30 @@ public partial class Form1 : Form
         using var smallFont = new Font("Arial", 7);
         using var labelFont = new Font("Arial", 9, FontStyle.Bold);
 
-        g.DrawString("n (диапазон случайных a, b)", labelFont, Brushes.Black,
-            padding + width / 2 - 70, padding + height + 25);
+        g.DrawString("ln(n) — n рос геометрически от 10 до Макс. n", labelFont, Brushes.Black,
+            padding + width / 2 - 120, padding + height + 25);
 
-        long xStep = Math.Max(1, (maxN - minN) / 6);
-        for (long n = minN; n <= maxN; n += xStep)
+        for (int i = 0; i <= 6; i++)
         {
-            int x = padding + (int)((n - minN) * width / nSpan);
+            double logN = logMin + logSpan * i / 6;
+            int x = padding + (int)(width * i / 6.0);
             g.DrawLine(Pens.LightGray, x, padding, x, padding + height);
-            g.DrawString(n.ToString("N0"), smallFont, Brushes.Black, x - 15, padding + height + 3);
+            g.DrawString(logN.ToString("F1"), smallFont, Brushes.Black, x - 10, padding + height + 3);
         }
 
         for (int i = 0; i <= 5; i++)
         {
-            double val = maxT * i / 5;
+            double val = maxMs * i / 5;
             int y = padding + height - (int)(height * i / 5.0);
             g.DrawLine(Pens.LightGray, padding, y, padding + width, y);
-            g.DrawString(val.ToString("F4"), smallFont, Brushes.Black, padding - 45, y - 6);
+            g.DrawString(val.ToString("G3"), smallFont, Brushes.Black, padding - 48, y - 6);
         }
 
-        foreach (var (n, t) in _points)
+        foreach (var (n, ms) in _points)
         {
-            int x = padding + (int)((n - minN) * width / nSpan);
-            int y = padding + height - (int)(t * height / maxT);
+            double logN = Math.Log(n);
+            int x = padding + (int)((logN - logMin) * width / logSpan);
+            int y = padding + height - (int)(ms * height / maxMs);
             g.FillEllipse(Brushes.SteelBlue, x - 3, y - 3, 6, 6);
         }
 
@@ -174,18 +236,18 @@ public partial class Form1 : Form
                 { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash };
 
             PointF? prev = null;
-            long sampleStep = Math.Max(1, (maxN - minN) / 100);
-            for (long n = Math.Max(1, minN); n <= maxN; n += sampleStep)
+            for (int i = 0; i <= 100; i++)
             {
-                double t = _approxC * Math.Log(n);
-                int x = padding + (int)((n - minN) * width / nSpan);
-                int y = padding + height - (int)(t * height / maxT);
+                double logN = logMin + logSpan * i / 100.0;
+                double ms = _approxC * logN;
+                int x = padding + (int)(width * i / 100.0);
+                int y = padding + height - (int)(ms * height / maxMs);
                 var pt = new PointF(x, y);
                 if (prev.HasValue) g.DrawLine(approxPen, prev.Value, pt);
                 prev = pt;
             }
         }
 
-        g.DrawString("Замер времени extgcd(a, b) от n", labelFont, Brushes.Black, padding, 10);
+        g.DrawString("Замер времени extgcd(a, b) от n (минимум из серий, с прогревом JIT)", labelFont, Brushes.Black, padding, 10);
     }
 }

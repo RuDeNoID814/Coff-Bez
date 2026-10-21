@@ -81,42 +81,42 @@ partial class Form1
 
         var lblExpTitle = new Label
         {
-            Text = "Замер времени (как в лабе 1): случайные a, b в диапазоне [1, n]",
+            Text = "Замер времени (как в лабе 1): случайные a, b в диапазоне [1, n], реальные миллисекунды",
             Location = new Point(20, 175),
-            Size = new Size(700, 20),
+            Size = new Size(820, 20),
             Font = new Font("Segoe UI", 10, FontStyle.Bold)
         };
 
-        var lblMaxN = new Label { Text = "Макс. n:", Location = new Point(20, 207), Size = new Size(60, 23), TextAlign = ContentAlignment.MiddleLeft };
+        var lblMaxN = new Label { Text = "Макс. n:", Location = new Point(20, 207), Size = new Size(65, 23), TextAlign = ContentAlignment.MiddleLeft };
         numMaxN = new NumericUpDown
         {
-            Location = new Point(85, 203),
-            Size = new Size(150, 23),
+            Location = new Point(90, 203),
+            Size = new Size(170, 23),
             Minimum = 1000,
-            Maximum = 2_000_000_000,
-            Value = 1_000_000_000,
-            Increment = 1000
+            Maximum = 9_000_000_000_000_000_000m,
+            Value = 1_000_000_000_000_000_000m,
+            Increment = 1
         };
 
-        var lblStep = new Label { Text = "Шаг:", Location = new Point(250, 207), Size = new Size(40, 23), TextAlign = ContentAlignment.MiddleLeft };
+        var lblStep = new Label { Text = "Точек:", Location = new Point(275, 207), Size = new Size(50, 23), TextAlign = ContentAlignment.MiddleLeft };
         numStep = new NumericUpDown
         {
-            Location = new Point(295, 203),
-            Size = new Size(130, 23),
-            Minimum = 100,
-            Maximum = 100_000_000,
-            Value = 25_000_000,
-            Increment = 100
+            Location = new Point(330, 203),
+            Size = new Size(70, 23),
+            Minimum = 5,
+            Maximum = 100,
+            Value = 25,
+            Increment = 1
         };
 
-        var lblRuns = new Label { Text = "Запусков:", Location = new Point(440, 207), Size = new Size(70, 23), TextAlign = ContentAlignment.MiddleLeft };
+        var lblRuns = new Label { Text = "Серий (мин.):", Location = new Point(410, 207), Size = new Size(95, 23), TextAlign = ContentAlignment.MiddleLeft };
         numRuns = new NumericUpDown
         {
-            Location = new Point(515, 203),
+            Location = new Point(510, 203),
             Size = new Size(70, 23),
             Minimum = 1,
             Maximum = 50,
-            Value = 5
+            Value = 15
         };
 
         btnRunExperiment = new Button
