@@ -185,6 +185,18 @@ public partial class Form1 : Form
         return n.ToString("0");
     }
 
+    // Число знаков после запятой подбираем по масштабу, иначе соседние
+    // деления при маленьком диапазоне времени округляются в одно и то же
+    // число (например "0,1" трижды подряд).
+    private static string FormatUs(double us)
+    {
+        if (us <= 0) return "0";
+        if (us >= 100) return us.ToString("0");
+        if (us >= 10) return us.ToString("0.0");
+        if (us >= 1) return us.ToString("0.00");
+        return us.ToString("0.000");
+    }
+
     private void PanelChart_Paint(object? sender, PaintEventArgs e)
     {
         if (_points.Count == 0) return;
@@ -236,7 +248,7 @@ public partial class Form1 : Form
             double val = maxUs * i / 5;
             int y = padding + height - (int)(height * i / 5.0);
             g.DrawLine(Pens.LightGray, padding, y, padding + width, y);
-            string text = val.ToString("0.#");
+            string text = FormatUs(val);
             var textSize = g.MeasureString(text, smallFont);
             g.DrawString(text, smallFont, Brushes.Black, padding - textSize.Width - 6, y - 7);
         }
