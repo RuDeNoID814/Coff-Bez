@@ -87,33 +87,33 @@ partial class Form1
             Font = new Font("Segoe UI", 10, FontStyle.Bold)
         };
 
-        var lblMaxN = new Label { Text = "Макс. n:", Location = new Point(20, 205), Size = new Size(60, 23) };
+        var lblMaxN = new Label { Text = "Макс. n:", Location = new Point(20, 207), Size = new Size(60, 23), TextAlign = ContentAlignment.MiddleLeft };
         numMaxN = new NumericUpDown
         {
             Location = new Point(85, 203),
-            Size = new Size(100, 23),
+            Size = new Size(150, 23),
             Minimum = 1000,
             Maximum = 2_000_000_000,
             Value = 1_000_000_000,
             Increment = 1000
         };
 
-        var lblStep = new Label { Text = "Шаг:", Location = new Point(200, 205), Size = new Size(40, 23) };
+        var lblStep = new Label { Text = "Шаг:", Location = new Point(250, 207), Size = new Size(40, 23), TextAlign = ContentAlignment.MiddleLeft };
         numStep = new NumericUpDown
         {
-            Location = new Point(245, 203),
-            Size = new Size(100, 23),
+            Location = new Point(295, 203),
+            Size = new Size(130, 23),
             Minimum = 100,
             Maximum = 100_000_000,
             Value = 25_000_000,
             Increment = 100
         };
 
-        var lblRuns = new Label { Text = "Запусков:", Location = new Point(360, 205), Size = new Size(65, 23) };
+        var lblRuns = new Label { Text = "Запусков:", Location = new Point(440, 207), Size = new Size(70, 23), TextAlign = ContentAlignment.MiddleLeft };
         numRuns = new NumericUpDown
         {
-            Location = new Point(430, 203),
-            Size = new Size(60, 23),
+            Location = new Point(515, 203),
+            Size = new Size(70, 23),
             Minimum = 1,
             Maximum = 50,
             Value = 5
@@ -122,8 +122,10 @@ partial class Form1
         btnRunExperiment = new Button
         {
             Text = "Запустить эксперимент",
-            Location = new Point(510, 202),
-            Size = new Size(170, 26)
+            Location = new Point(600, 202),
+            Size = new Size(200, 28),
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink
         };
         btnRunExperiment.Click += BtnRunExperiment_Click;
 

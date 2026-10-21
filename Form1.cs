@@ -57,10 +57,12 @@ public partial class Form1 : Form
                     total += MeasureOnce(n, rng);
                 double avg = total / runs;
 
-                _points.Add((n, avg));
-
+                // _points меняем только на UI-потоке — иначе Paint-обработчик
+                // панели (тоже на UI-потоке) может итерироваться по списку
+                // в момент, когда фоновый поток в него пишет.
                 Invoke(() =>
                 {
+                    _points.Add((n, avg));
                     progressBar1.Value = Math.Min(progressBar1.Value + 1, progressBar1.Maximum);
                     panelChart.Invalidate();
                 });
