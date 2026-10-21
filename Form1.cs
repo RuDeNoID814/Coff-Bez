@@ -15,6 +15,40 @@ public partial class Form1 : Form
     public Form1()
     {
         InitializeComponent();
+
+        AttachRangeNotice(numA, "a");
+        AttachRangeNotice(numB, "b");
+        AttachRangeNotice(numMaxN, "Макс. n");
+        AttachRangeNotice(numStep, "Точек");
+        AttachRangeNotice(numRuns, "Серий");
+    }
+
+    // Подписываем поле на проверку введённого текста до того, как
+    // NumericUpDown сам молча обрежет значение до Min/Max при потере фокуса —
+    // иначе пользователь видит введённое число, а потом оно без объяснений
+    // "прыгает" к границе диапазона.
+    private void AttachRangeNotice(NumericUpDown control, string fieldName)
+    {
+        control.Validating += (s, e) => CheckRange(control, fieldName);
+    }
+
+    private void CheckRange(NumericUpDown control, string fieldName)
+    {
+        string groupSep = System.Globalization.CultureInfo.CurrentCulture.NumberFormat.NumberGroupSeparator;
+        string raw = control.Text.Replace(groupSep, "").Replace(" ", "").Trim();
+
+        if (!decimal.TryParse(raw, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.CurrentCulture, out var typed))
+            return;
+
+        if (typed > control.Maximum)
+        {
+            rangeToolTip.Show($"«{fieldName}»: не больше {control.Maximum:N0}", control, 0, -24, 4000);
+        }
+        else if (typed < control.Minimum)
+        {
+            rangeToolTip.Show($"«{fieldName}»: не меньше {control.Minimum:N0}", control, 0, -24, 4000);
+        }
     }
 
     private void BtnCompute_Click(object? sender, EventArgs e)

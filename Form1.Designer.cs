@@ -16,6 +16,7 @@ partial class Form1
     private ProgressBar progressBar1 = null!;
     private Panel panelChart = null!;
     private Label lblApprox = null!;
+    private ToolTip rangeToolTip = null!;
 
     protected override void Dispose(bool disposing)
     {
@@ -33,6 +34,14 @@ partial class Form1
         ClientSize = new Size(900, 700);
         Text = "Коэффициенты Безу — рекурсивный расширенный алгоритм Евклида";
         MinimumSize = new Size(820, 600);
+
+        rangeToolTip = new ToolTip(components)
+        {
+            ToolTipTitle = "Ограничение значения",
+            IsBalloon = true,
+            InitialDelay = 0,
+            ReshowDelay = 0
+        };
 
         var lblTitle = new Label
         {
